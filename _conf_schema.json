@@ -1,0 +1,233 @@
+{
+  "default_api": {
+    "description": "默认使用的API",
+    "type": "string",
+    "default": "lolicon",
+    "hint": "可选值: lolicon 或 suki"
+  },
+  "r18_mode": {
+    "description": "R18模式",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后默认获取R18图片"
+  },
+  "cooldown_seconds": {
+    "description": "命令冷却时间(秒)",
+    "type": "int",
+    "default": 10,
+    "hint": "同一用户两次命令之间的最小间隔"
+  },
+  "max_concurrent_requests": {
+    "description": "最大并发请求数",
+    "type": "int",
+    "default": 10,
+    "hint": "同时进行的API请求数量上限"
+  },
+  "request_timeout": {
+    "description": "请求超时时间(秒)",
+    "type": "int",
+    "default": 10,
+    "hint": "单个API请求的超时时间"
+  },
+  "max_retries": {
+    "description": "最大重试次数",
+    "type": "int",
+    "default": 3,
+    "hint": "请求失败后的重试次数"
+  },
+  "enable_logging": {
+    "description": "启用日志记录",
+    "type": "bool",
+    "default": true,
+    "hint": "记录API调用日志"
+  },
+  "log_retention_days": {
+    "description": "日志保留天数",
+    "type": "int",
+    "default": 30,
+    "hint": "超过此天数的日志将被自动删除"
+  },
+  "enable_local_storage": {
+    "description": "启用本地存储",
+    "type": "bool",
+    "default": true,
+    "hint": "将获取的图片保存到本地"
+  },
+  "enable_deduplication": {
+    "description": "启用图片去重",
+    "type": "bool",
+    "default": true,
+    "hint": "避免重复发送相同的图片"
+  },
+  "dedup_history_size": {
+    "description": "去重历史记录数量",
+    "type": "int",
+    "default": 100,
+    "hint": "记录最近发送过的图片PID数量，超过后自动清理旧记录"
+  },
+  "lolicon": {
+    "description": "Lolicon API配置",
+    "type": "object",
+    "items": {
+      "storage_path": {
+        "description": "图片存储路径",
+        "type": "string",
+        "default": "",
+        "hint": "Lolicon图片保存路径，留空则使用插件数据目录下的 images/lolicon"
+      },
+      "default_size": {
+        "description": "默认图片尺寸",
+        "type": "list",
+        "default": ["original"],
+        "hint": "可选: original, regular, small"
+      },
+      "default_proxy": {
+        "description": "默认代理服务器",
+        "type": "string",
+        "default": "i.pixiv.re",
+        "hint": "Pixiv图片代理服务器"
+      }
+    }
+  },
+  "suki": {
+    "description": "Suki API配置",
+    "type": "object",
+    "items": {
+      "storage_path": {
+        "description": "图片存储路径",
+        "type": "string",
+        "default": "",
+        "hint": "Suki图片保存路径，留空则使用插件数据目录下的 images/suki"
+      },
+      "default_level": {
+        "description": "默认Level等级",
+        "type": "string",
+        "default": "0-3",
+        "hint": "社保程度: 0-6"
+      },
+      "default_taste": {
+        "description": "默认Taste类型",
+        "type": "string",
+        "default": "0",
+        "hint": "图片类型: 0随机, 1萝莉, 2少女, 3御姐"
+      },
+      "default_proxy": {
+        "description": "默认代理服务器",
+        "type": "string",
+        "default": "i.pixiv.re",
+        "hint": "Pixiv图片代理服务器"
+      }
+    }
+  },
+  "funny_replies": {
+    "description": "趣味回复配置",
+    "type": "object",
+    "items": {
+      "enabled": {
+        "description": "启用趣味回复",
+        "type": "bool",
+        "default": true,
+        "hint": "使用随机趣味语句回复用户"
+      },
+      "fetching": {
+        "description": "获取中回复",
+        "type": "list",
+        "default": [
+          "呼呼呼起飞啦！",
+          "正在前往二次元世界...",
+          "让我看看有什么好东西~",
+          "稍等，正在挑选中...",
+          "马上就来！"
+        ],
+        "hint": "正在获取图片时的随机回复"
+      },
+      "success": {
+        "description": "成功回复",
+        "type": "list",
+        "default": [
+          "别冲的到处都是。",
+          "请慢慢享用~",
+          "这就是你要的学习资料！",
+          "好东西已送达~",
+          "嘿嘿，懂的都懂~"
+        ],
+        "hint": "成功获取图片后的随机回复"
+      },
+      "no_result": {
+        "description": "无结果回复",
+        "type": "list",
+        "default": [
+          "糟糕找不到学习资料了。",
+          "呜...什么都没找到...",
+          "这个真没有，换个关键词试试？",
+          "空空如也，换个搜索词吧~"
+        ],
+        "hint": "没有找到图片时的随机回复"
+      },
+      "network_error": {
+        "description": "网络错误回复",
+        "type": "list",
+        "default": [
+          "什么叫网站404？",
+          "网络好像不太行呢...",
+          "连接失败了，是不是网断了？",
+          "服务器好像在睡觉...",
+          "网络波动，请稍后重试~"
+        ],
+        "hint": "网络错误时的随机回复"
+      },
+      "timeout": {
+        "description": "超时回复",
+        "type": "list",
+        "default": [
+          "太慢了太慢了！",
+          "等得花都谢了...",
+          "超时了，服务器太忙了吧",
+          "响应太慢，要不待会儿再试？"
+        ],
+        "hint": "请求超时时的随机回复"
+      },
+      "cooldown": {
+        "description": "冷却回复",
+        "type": "list",
+        "default": [
+          "慢点慢点，让我喘口气！",
+          "你太急了，休息一下~",
+          "冷却中，别急嘛~",
+          "太快了太快了！"
+        ],
+        "hint": "冷却中的随机回复"
+      },
+      "r18_on": {
+        "description": "R18开启回复",
+        "type": "list",
+        "default": [
+          "R18模式已开启，请注意身体~",
+          "大人的世界开启了！",
+          "嘿嘿，懂的都懂~"
+        ],
+        "hint": "开启R18模式时的随机回复"
+      },
+      "r18_off": {
+        "description": "R18关闭回复",
+        "type": "list",
+        "default": [
+          "R18模式已关闭，回归纯洁~",
+          "全年龄模式，老少皆宜~",
+          "清心寡欲模式启动"
+        ],
+        "hint": "关闭R18模式时的随机回复"
+      },
+      "api_switch": {
+        "description": "API切换回复",
+        "type": "list",
+        "default": [
+          "切换成功！现在使用 {api} API",
+          "已切换到 {api}~",
+          "现在由 {api} 为您服务"
+        ],
+        "hint": "切换API时的随机回复，{api}会被替换为API名称"
+      }
+    }
+  }
+}

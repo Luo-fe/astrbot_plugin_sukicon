@@ -1,0 +1,5 @@
+name: astrbot_plugin_sukicon
+desc: 一个功能完整的 AstrBot 插件，集成 Lolicon API 和 Suki Loli API，实现图像资源获取功能。
+version: 1.0.0
+author: Luo-fe
+repo: https://github.com/Luo-fe/astrbot_plugin_sukicon
