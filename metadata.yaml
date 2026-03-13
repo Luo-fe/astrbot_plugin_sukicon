@@ -1,0 +1,5 @@
+name: astrbot_plugin_sukicon
+desc: Sukicon 图像API插件 - 集成 Lolicon 和 Suki API，支持R18模式切换、多标签搜索、本地存储
+version: 1.0.0
+author: developer
+repo: https://github.com/developer/astrbot_plugin_sukicon
