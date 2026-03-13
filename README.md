@@ -24,7 +24,7 @@
 ### 方法二：Git Clone
 ```bash
 cd AstrBot/data/plugins/
-git clone https://github.com/你的用户名/astrbot_plugin_sukicon.git
+git clone https://github.com/Luo-fe/astrbot_plugin_sukicon.git
 ```
 
 ## ⚙️ 配置
