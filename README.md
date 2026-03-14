@@ -4,7 +4,7 @@
 
 ## ✨ 功能特性
 
-- 🔄 **API 切换**: 在 Lolicon 和 Suki API 之间无缝切换
+- 🔀 **双 API 支持**: 同时支持 Lolicon 和 Suki API，无需切换
 - 🔞 **R18 模式**: 支持一键切换 R18 模式
 - 🏷️ **多标签搜索**: 支持多标签 OR 搜索
 - 📊 **Suki 特有参数**: 支持 level（社保程度）和 taste（图片类型）参数
@@ -35,7 +35,6 @@ git clone https://github.com/Luo-fe/astrbot_plugin_sukicon.git
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `default_api` | 默认 API | `lolicon` |
 | `r18_mode` | R18 模式 | `false` |
 | `cooldown_seconds` | 冷却时间（秒） | `10` |
 | `enable_local_storage` | 启用本地存储 | `true` |
@@ -60,7 +59,6 @@ git clone https://github.com/Luo-fe/astrbot_plugin_sukicon.git
 | `funny_replies.cooldown` | 冷却中的回复列表 |
 | `funny_replies.r18_on` | R18 模式开启的回复列表 |
 | `funny_replies.r18_off` | R18 模式关闭的回复列表 |
-| `funny_replies.api_switch` | API 切换的回复列表（支持 `{api}` 占位符） |
 
 ## 📖 使用说明
 
@@ -68,8 +66,7 @@ git clone https://github.com/Luo-fe/astrbot_plugin_sukicon.git
 
 | 指令 | 别名 | 说明 |
 |------|------|------|
-| `切换loli` | `切换api`, `switch` | 切换 API |
-| `切换r18` | `r18开关` | 切换 R18 模式 |
+| `切换r18` | `r18开关` | 切换 R18 模式（管理员） |
 | `当前状态` | `status` | 查看当前状态 |
 | `涩涩手册` | `sssc` | 查看通用手册 |
 | `lolicon手册` | `lolicon` | 查看 Lolicon 手册 |
@@ -208,4 +205,4 @@ MIT License
 
 - [Lolicon API](https://api.lolicon.app/) - 提供图像 API 服务
 - [Suki API](https://lolisuki.cn/) - 提供图像 API 服务
-- [AstrBot](https://github.com/Soulter/AstrBot) - AstrBot 框架
+- [AstrBot](https://github.com/AstrBotDevs/AstrBot) - AstrBot 框架
