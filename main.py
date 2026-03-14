@@ -156,6 +156,7 @@ class SukiconPlugin(Star):
         ) if self.config.enable_local_storage else None
         
         self.last_usage = {}
+        self.cooldown_lock = asyncio.Lock()
         self.semaphore = None
 
     async def initialize(self):
@@ -167,16 +168,15 @@ class SukiconPlugin(Star):
     async def terminate(self):
         logger.info("[Sukicon] 插件已卸载")
 
-    def _check_cooldown(self, user_id: str) -> Optional[float]:
-        now = asyncio.get_event_loop().time()
-        if user_id in self.last_usage:
-            elapsed = now - self.last_usage[user_id]
-            if elapsed < self.config.cooldown_seconds:
-                return self.config.cooldown_seconds - elapsed
-        return None
-
-    def _update_cooldown(self, user_id: str):
-        self.last_usage[user_id] = asyncio.get_event_loop().time()
+    async def _check_and_update_cooldown(self, user_id: str) -> Optional[float]:
+        async with self.cooldown_lock:
+            now = asyncio.get_event_loop().time()
+            if user_id in self.last_usage:
+                elapsed = now - self.last_usage[user_id]
+                if elapsed < self.config.cooldown_seconds:
+                    return self.config.cooldown_seconds - elapsed
+            self.last_usage[user_id] = now
+            return None
 
     async def _save_images(self, images: list[ImageData], api_type: str):
         if not self.config.enable_local_storage:
@@ -202,7 +202,7 @@ class SukiconPlugin(Star):
     ):
         user_id = str(event.get_sender_id())
         
-        cooldown = self._check_cooldown(user_id)
+        cooldown = await self._check_and_update_cooldown(user_id)
         if cooldown:
             reply = self.config.get_funny_reply('cooldown')
             if reply:
@@ -210,8 +210,6 @@ class SukiconPlugin(Star):
             else:
                 yield event.plain_result(f"冷却中，请等待 {cooldown:.1f} 秒后重试")
             return
-        
-        self._update_cooldown(user_id)
         
         fetching_reply = self.config.get_funny_reply('fetching')
         if fetching_reply:
@@ -231,7 +229,7 @@ class SukiconPlugin(Star):
                 
                 images = []
                 total_fetched = 0
-                new_pids_to_mark = []
+                seen_pids_this_batch = set()
                 
                 for attempt in range(max_attempts):
                     if api_type == 'lolicon':
@@ -255,9 +253,10 @@ class SukiconPlugin(Star):
                     total_fetched += len(batch)
                     
                     if self.config.enable_deduplication:
-                        new_images = [img for img in batch if not self.config.is_pid_sent(img.pid)]
-                        images.extend(new_images)
-                        new_pids_to_mark.extend([img.pid for img in new_images])
+                        for img in batch:
+                            if not self.config.is_pid_sent(img.pid) and img.pid not in seen_pids_this_batch:
+                                images.append(img)
+                                seen_pids_this_batch.add(img.pid)
                         if len(images) >= num:
                             images = images[:num]
                             break
@@ -286,8 +285,7 @@ class SukiconPlugin(Star):
                             yield event.plain_result("没有找到符合条件的图片")
                     return
                 
-                for pid in new_pids_to_mark[:len(images)]:
-                    await self.config.mark_pid_sent(pid)
+                await self.config.mark_pids_sent([img.pid for img in images])
                 
                 await self._save_images(images, api_type)
                 
@@ -339,6 +337,10 @@ class SukiconPlugin(Star):
 
     @filter.command("切换loli", alias={"切换api", "switch"})
     async def switch_api(self, event: AstrMessageEvent):
+        if not self._is_admin(event):
+            yield event.plain_result("⚠️ 此命令仅限管理员使用")
+            return
+        
         new_api = self.config.toggle_api()
         api_name = "Lolicon" if new_api == "lolicon" else "Suki"
         reply = self.config.get_funny_reply('api_switch')
@@ -349,6 +351,10 @@ class SukiconPlugin(Star):
 
     @filter.command("切换r18", alias={"r18开关"})
     async def switch_r18(self, event: AstrMessageEvent):
+        if not self._is_admin(event):
+            yield event.plain_result("⚠️ 此命令仅限管理员使用")
+            return
+        
         new_state = self.config.toggle_r18()
         if new_state:
             reply = self.config.get_funny_reply('r18_on')
@@ -360,6 +366,20 @@ class SukiconPlugin(Star):
         else:
             state_text = "开启" if new_state else "关闭"
             yield event.plain_result(f"R18模式已{state_text}")
+
+    def _is_admin(self, event: AstrMessageEvent) -> bool:
+        try:
+            role_info = event.get_sender_role()
+            if role_info and role_info in ['admin', 'owner', 'superuser']:
+                return True
+            
+            sender_id = str(event.get_sender_id())
+            if hasattr(self.config, 'admin_users') and sender_id in self.config.admin_users:
+                return True
+            
+            return False
+        except Exception:
+            return True
 
     @filter.command("当前状态", alias={"status"})
     async def show_status(self, event: AstrMessageEvent):
@@ -406,19 +426,10 @@ R18模式: {r18_state}
             ):
                 yield result
         else:
-            parsed = parse_suki_args(args, self.config.r18_mode_enabled)
+            parsed = parse_suki_args(args)
             level = parsed.level or self.config.suki.default_level
-            has_r18_level = False
-            if level:
-                if '-' in level:
-                    level_nums = [int(x) for x in level.split('-')]
-                    has_r18_level = any(n >= 5 for n in level_nums)
-                else:
-                    has_r18_level = int(level) >= 5
             
-            if parsed.r18_override is not None:
-                r18 = parsed.r18_override
-            elif has_r18_level:
+            if parsed.has_r18_level:
                 r18 = 1
             elif self.config.r18_mode_enabled:
                 r18 = 2
@@ -499,27 +510,18 @@ R18模式: {r18_state}
         else:
             args = args or ""
         
-        parsed = parse_suki_args(args, self.config.r18_mode_enabled)
+        parsed = parse_suki_args(args)
         
         level = parsed.level or self.config.suki.default_level
-        has_r18_level = False
-        if level:
-            if '-' in level:
-                level_nums = [int(x) for x in level.split('-')]
-                has_r18_level = any(n >= 5 for n in level_nums)
-            else:
-                has_r18_level = int(level) >= 5
         
-        if parsed.r18_override is not None:
-            r18 = parsed.r18_override
-        elif has_r18_level:
+        if parsed.has_r18_level:
             r18 = 1
         elif self.config.r18_mode_enabled:
             r18 = 2
         else:
             r18 = 0
         
-        logger.info(f"[Sukicon] suki命令解析: full_msg={full_msg}, args={args}, level={level}, r18_override={parsed.r18_override}, final_r18={r18}")
+        logger.info(f"[Sukicon] suki命令解析: args={args}, level={level}, has_r18_level={parsed.has_r18_level}, final_r18={r18}")
         
         async for result in self._fetch_and_respond(
             event, "suki", r18, parsed.num, parsed.tags, level, parsed.taste
@@ -534,7 +536,7 @@ R18模式: {r18_state}
         else:
             args = args or ""
         
-        parsed = parse_suki_args(args, False)
+        parsed = parse_suki_args(args)
         
         async for result in self._fetch_and_respond(
             event, "suki", 1, parsed.num, parsed.tags, parsed.level, parsed.taste
@@ -554,7 +556,7 @@ R18模式: {r18_state}
         else:
             args = args or ""
         
-        parsed = parse_suki_args(args, False)
+        parsed = parse_suki_args(args)
         
         async for result in self._fetch_and_respond(
             event, "suki", 0, parsed.num, parsed.tags, parsed.level, parsed.taste

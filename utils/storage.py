@@ -2,32 +2,72 @@ import httpx
 import asyncio
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, ClassVar
+from typing import Optional
+from urllib.parse import urlparse
 
 from astrbot.api import logger
 
 from ..apis.base import ImageData
 
 
+ALLOWED_DOMAINS = {
+    'i.pximg.net',
+    'i.pixiv.cat',
+    'i.pixiv.re',
+    'i.pixiv.nl',
+    'pixiv.cat',
+    'pixiv.re',
+    'pixiv.nl',
+    'api.lolicon.app',
+    'lolisuki.cn',
+}
+
+MAX_DOWNLOAD_SIZE = 50 * 1024 * 1024
+
+
 class ImageStorage:
-    _global_lock: ClassVar[asyncio.Lock | None] = None
-    
-    @classmethod
-    def _get_lock(cls) -> asyncio.Lock:
-        if cls._global_lock is None:
-            cls._global_lock = asyncio.Lock()
-        return cls._global_lock
     
     def __init__(self, storage_path: Path):
         self.storage_path = storage_path
         self._counter_file = storage_path / ".counter"
+        self._lock = asyncio.Lock()
+        self._client: Optional[httpx.AsyncClient] = None
         self._ensure_directory()
 
     def _ensure_directory(self):
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=60.0,
+                follow_redirects=True,
+                max_redirects=5,
+            )
+        return self._client
+
+    async def close(self):
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+
+    def _validate_url(self, url: str) -> bool:
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in ('http', 'https'):
+                return False
+            hostname = parsed.hostname or ''
+            if hostname.lower() not in ALLOWED_DOMAINS:
+                if not any(hostname.lower().endswith('.' + d) for d in ALLOWED_DOMAINS):
+                    logger.warning(f"[ImageStorage] 域名不在白名单中: {hostname}")
+                    return False
+            return True
+        except Exception as e:
+            logger.warning(f"[ImageStorage] URL解析失败: {e}")
+            return False
+
     async def _get_next_index(self) -> int:
-        async with self._get_lock():
+        async with self._lock:
             counter = 1
             if self._counter_file.exists():
                 try:
@@ -46,8 +86,8 @@ class ImageStorage:
             logger.warning(f"[ImageStorage] 图片无有效URL: PID={image.pid}")
             return None
 
-        if not image.original_url.startswith(('http://', 'https://')):
-            logger.warning(f"[ImageStorage] 无效URL协议: {image.original_url[:50]}")
+        if not self._validate_url(image.original_url):
+            logger.warning(f"[ImageStorage] URL安全校验失败: {image.original_url[:50]}")
             return None
 
         try:
@@ -59,13 +99,21 @@ class ImageStorage:
             image_path = self.storage_path / image_filename
             txt_path = self.storage_path / txt_filename
             
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream('GET', image.original_url) as response:
-                    response.raise_for_status()
-                    
-                    with open(image_path, 'wb') as f:
-                        async for chunk in response.aiter_bytes(chunk_size=8192):
-                            f.write(chunk)
+            client = await self._get_client()
+            total_size = 0
+            
+            async with client.stream('GET', image.original_url) as response:
+                response.raise_for_status()
+                
+                with open(image_path, 'wb') as f:
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        total_size += len(chunk)
+                        if total_size > MAX_DOWNLOAD_SIZE:
+                            logger.error(f"[ImageStorage] 图片超过大小限制 ({MAX_DOWNLOAD_SIZE // 1024 // 1024}MB)")
+                            f.close()
+                            image_path.unlink(missing_ok=True)
+                            return None
+                        f.write(chunk)
             
             await self._save_metadata(txt_path, image)
             

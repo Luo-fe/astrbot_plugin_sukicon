@@ -16,13 +16,12 @@ class SukiArgs:
     num: int
     level: Optional[str] = None
     taste: Optional[str] = None
-    r18_override: Optional[int] = None
+    has_r18_level: bool = False
 
 
 def parse_setu_args(args_str: str, r18_mode: bool) -> SetuArgs:
     tags = []
     num = 1
-    r18_override = None
     
     if not args_str or not args_str.strip():
         return SetuArgs(tags=tags, num=num, r18_override=1 if r18_mode else None)
@@ -35,22 +34,18 @@ def parse_setu_args(args_str: str, r18_mode: bool) -> SetuArgs:
         else:
             tags.append(part)
     
-    if r18_mode and r18_override is None:
-        r18_override = 1
-    
-    return SetuArgs(tags=tags, num=num, r18_override=r18_override)
+    return SetuArgs(tags=tags, num=num, r18_override=1 if r18_mode else None)
 
 
-def parse_suki_args(args_str: str, r18_mode: bool) -> SukiArgs:
+def parse_suki_args(args_str: str) -> SukiArgs:
     tags = []
     num = 1
     level = None
     taste = None
-    r18_override = None
+    has_r18_level = False
     
     if not args_str or not args_str.strip():
-        return SukiArgs(tags=tags, num=num, level=level, taste=taste, 
-                       r18_override=1 if r18_mode else None)
+        return SukiArgs(tags=tags, num=num, level=level, taste=taste, has_r18_level=False)
     
     parts = args_str.strip().split()
     i = 0
@@ -67,10 +62,12 @@ def parse_suki_args(args_str: str, r18_mode: bool) -> SukiArgs:
                         start_num, end_num = int(start), int(end)
                         if start_num <= 6 and end_num <= 6 and start_num >= 0 and end_num >= 0:
                             level = level_val
+                            has_r18_level = any(n >= 5 for n in [start_num, end_num])
                 else:
                     level_num = int(level_val)
                     if 0 <= level_num <= 6:
                         level = level_val
+                        has_r18_level = level_num >= 5
             i += 2
             continue
             
@@ -90,20 +87,7 @@ def parse_suki_args(args_str: str, r18_mode: bool) -> SukiArgs:
         
         i += 1
     
-    if level:
-        if '-' in level:
-            level_nums = [int(x) for x in level.split('-')]
-            if any(n >= 5 for n in level_nums):
-                r18_override = 1
-        else:
-            if int(level) >= 5:
-                r18_override = 1
-    
-    if r18_mode and r18_override is None:
-        r18_override = 1
-    
-    return SukiArgs(tags=tags, num=num, level=level, taste=taste, 
-                   r18_override=r18_override)
+    return SukiArgs(tags=tags, num=num, level=level, taste=taste, has_r18_level=has_r18_level)
 
 
 def format_image_info(image) -> str:

@@ -1,7 +1,6 @@
-import os
+import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from astrbot.api import logger
 
@@ -13,6 +12,8 @@ class APILogger:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self._current_log_file = None
         self._current_date = None
+        self._write_lock = asyncio.Lock()
+        self._last_rotation_check = 0
 
     def _get_log_file(self) -> Path:
         today = datetime.now().strftime("%Y-%m-%d")
@@ -24,8 +25,13 @@ class APILogger:
     def _rotate_logs(self):
         if self.retention_days <= 0:
             return
+        
+        now = datetime.now().timestamp()
+        if now - self._last_rotation_check < 3600:
+            return
+        self._last_rotation_check = now
             
-        cutoff_date = datetime.now().timestamp() - (self.retention_days * 86400)
+        cutoff_date = now - (self.retention_days * 86400)
         for log_file in self.log_dir.glob("api_calls_*.log"):
             try:
                 file_time = log_file.stat().st_mtime
@@ -50,17 +56,18 @@ class APILogger:
         log_entry = f"[{timestamp}] [{api_type}] [ERROR] {error}\n"
         self._write_log(log_entry)
 
-    def _write_log(self, entry: str):
-        try:
-            self._rotate_logs()
-            log_file = self._get_log_file()
-            with open(log_file, 'a', encoding='utf-8') as f:
-                f.write(entry)
-        except Exception as e:
-            logger.error(f"[APILogger] 写入日志失败: {e}")
+    async def _write_log(self, entry: str):
+        async with self._write_lock:
+            try:
+                self._rotate_logs()
+                log_file = self._get_log_file()
+                with open(log_file, 'a', encoding='utf-8') as f:
+                    f.write(entry)
+            except Exception as e:
+                logger.error(f"[APILogger] 写入日志失败: {e}")
 
-    def log_api_call(self, api_type: str, params: dict, response: dict, success: bool):
-        self.log_request(api_type, params)
+    async def log_api_call(self, api_type: str, params: dict, response: dict, success: bool):
+        await self.log_request(api_type, params)
         if success:
             data_summary = {}
             if 'data' in response:
@@ -72,7 +79,7 @@ class APILogger:
                         'first_pid': first_item.get('pid'),
                         'first_title': first_item.get('title'),
                     }
-            self.log_response(api_type, "SUCCESS", data_summary)
+            await self.log_response(api_type, "SUCCESS", data_summary)
         else:
             error_msg = response.get('error', response.get('message', 'Unknown error'))
-            self.log_error(api_type, error_msg)
+            await self.log_error(api_type, error_msg)

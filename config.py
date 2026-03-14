@@ -143,7 +143,6 @@ class PluginConfig(ConfigNode):
         super().__init__(cfg)
 
         self.data_dir = StarTools.get_data_dir(self._plugin_name)
-        self.plugin_dir = Path(get_astrbot_plugin_path()) / self._plugin_name
         self.logs_dir = self.data_dir / "logs"
         self.state_file = self.data_dir / "state.json"
         self.dedup_file = self.data_dir / "dedup.json"
@@ -238,6 +237,7 @@ class PluginConfig(ConfigNode):
         import json
         self._dedup_lock = asyncio.Lock()
         self._sent_pids: deque[int] = deque(maxlen=self.dedup_history_size)
+        self._pending_save = False
         if self.dedup_file.exists():
             try:
                 with open(self.dedup_file, 'r', encoding='utf-8') as f:
@@ -248,10 +248,8 @@ class PluginConfig(ConfigNode):
                 logger.warning(f"加载去重文件失败: {e}")
                 self._sent_pids = deque(maxlen=self.dedup_history_size)
 
-    async def save_dedup(self):
+    async def _save_dedup_async(self):
         import json
-        if not self.enable_deduplication:
-            return
         async with self._dedup_lock:
             pids_list = list(self._sent_pids)
             try:
@@ -265,10 +263,11 @@ class PluginConfig(ConfigNode):
             return False
         return pid in self._sent_pids
 
-    async def mark_pid_sent(self, pid: int):
-        if not self.enable_deduplication:
+    async def mark_pids_sent(self, pids: list[int]):
+        if not self.enable_deduplication or not pids:
             return
         async with self._dedup_lock:
-            if pid not in self._sent_pids:
-                self._sent_pids.append(pid)
-        await self.save_dedup()
+            for pid in pids:
+                if pid not in self._sent_pids:
+                    self._sent_pids.append(pid)
+        await self._save_dedup_async()
