@@ -73,13 +73,26 @@ class BaseImageAPI(ABC):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self._max_concurrent = max_concurrent
-        self._semaphore = None
-    
-    @property
-    def semaphore(self):
-        if self._semaphore is None:
-            self._semaphore = asyncio.Semaphore(self._max_concurrent)
-        return self._semaphore
+        self._client: Optional[httpx.AsyncClient] = None
+        self._client_lock = asyncio.Lock()
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        async with self._client_lock:
+            if self._client is None or self._client.is_closed:
+                self._client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(self.timeout, connect=5.0),
+                    limits=httpx.Limits(
+                        max_keepalive_connections=5,
+                        max_connections=self._max_concurrent
+                    )
+                )
+            return self._client
+
+    async def close(self):
+        async with self._client_lock:
+            if self._client and not self._client.is_closed:
+                await self._client.aclose()
+                self._client = None
 
     async def _request(self, params: dict) -> dict:
         retry_count = 0
@@ -87,14 +100,10 @@ class BaseImageAPI(ABC):
         
         while retry_count < self.max_retries:
             try:
-                async with self.semaphore:
-                    async with httpx.AsyncClient(
-                        timeout=httpx.Timeout(self.timeout, connect=5.0),
-                        limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
-                    ) as client:
-                        response = await client.post(self.API_URL, json=params)
-                        response.raise_for_status()
-                        return response.json()
+                client = await self._get_client()
+                response = await client.post(self.API_URL, json=params)
+                response.raise_for_status()
+                return response.json()
                         
             except httpx.ConnectError as e:
                 last_error = e

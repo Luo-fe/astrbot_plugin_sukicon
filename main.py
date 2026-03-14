@@ -178,6 +178,10 @@ class SukiconPlugin(Star):
         logger.info(f"[Sukicon] R18模式: {'开启' if self.config.r18_mode_enabled else '关闭'}")
 
     async def terminate(self):
+        if self.lolicon_api:
+            await self.lolicon_api.close()
+        if self.suki_api:
+            await self.suki_api.close()
         if self.lolicon_storage:
             await self.lolicon_storage.close()
         if self.suki_storage:
