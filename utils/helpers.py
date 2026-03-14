@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class SetuArgs:
     tags: list[str]
     num: int
-    r18_override: Optional[int] = None  # None=使用默认, 0=强制非R18, 1=强制R18
+    r18_override: Optional[int] = None
 
 
 @dataclass
@@ -64,16 +64,22 @@ def parse_suki_args(args_str: str, r18_mode: bool) -> SukiArgs:
                 if '-' in level_val:
                     start, end = level_val.split('-')
                     if start.isdigit() and end.isdigit() and int(start) <= int(end):
-                        level = level_val
+                        start_num, end_num = int(start), int(end)
+                        if start_num <= 6 and end_num <= 6 and start_num >= 0 and end_num >= 0:
+                            level = level_val
                 else:
-                    level = level_val
+                    level_num = int(level_val)
+                    if 0 <= level_num <= 6:
+                        level = level_val
             i += 2
             continue
             
         if part == 'taste' and i + 1 < len(parts):
             taste_val = parts[i + 1]
             if re.match(r'^\d+(,\d+)*$', taste_val):
-                taste = taste_val
+                taste_nums = [int(x) for x in taste_val.split(',')]
+                if all(0 <= x <= 3 for x in taste_nums):
+                    taste = taste_val
             i += 2
             continue
         
@@ -98,12 +104,6 @@ def parse_suki_args(args_str: str, r18_mode: bool) -> SukiArgs:
     
     return SukiArgs(tags=tags, num=num, level=level, taste=taste, 
                    r18_override=r18_override)
-
-
-def format_tags_for_api(tags: list[str]) -> list[str]:
-    if not tags:
-        return []
-    return ["|".join(tags)]
 
 
 def format_image_info(image) -> str:

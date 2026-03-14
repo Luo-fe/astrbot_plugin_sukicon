@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from collections.abc import Mapping, MutableMapping
 from collections import deque
@@ -9,7 +10,7 @@ import random
 
 from astrbot.api import logger
 from astrbot.core.config.astrbot_config import AstrBotConfig
-from astrbot.core.star.star_tools import StarTools
+from astrbot.api.star import StarTools
 from astrbot.core.utils.astrbot_path import get_astrbot_plugin_path
 
 
@@ -235,6 +236,7 @@ class PluginConfig(ConfigNode):
 
     def _init_dedup(self):
         import json
+        self._dedup_lock = asyncio.Lock()
         self._sent_pids: deque[int] = deque(maxlen=self.dedup_history_size)
         if self.dedup_file.exists():
             try:
@@ -246,25 +248,27 @@ class PluginConfig(ConfigNode):
                 logger.warning(f"加载去重文件失败: {e}")
                 self._sent_pids = deque(maxlen=self.dedup_history_size)
 
-    def save_dedup(self):
+    async def save_dedup(self):
         import json
         if not self.enable_deduplication:
             return
-        pids_list = list(self._sent_pids)
-        try:
-            with open(self.dedup_file, 'w', encoding='utf-8') as f:
-                json.dump({'sent_pids': pids_list}, f, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"保存去重文件失败: {e}")
+        async with self._dedup_lock:
+            pids_list = list(self._sent_pids)
+            try:
+                with open(self.dedup_file, 'w', encoding='utf-8') as f:
+                    json.dump({'sent_pids': pids_list}, f, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"保存去重文件失败: {e}")
 
     def is_pid_sent(self, pid: int) -> bool:
         if not self.enable_deduplication:
             return False
         return pid in self._sent_pids
 
-    def mark_pid_sent(self, pid: int):
+    async def mark_pid_sent(self, pid: int):
         if not self.enable_deduplication:
             return
-        if pid not in self._sent_pids:
-            self._sent_pids.append(pid)
-        self.save_dedup()
+        async with self._dedup_lock:
+            if pid not in self._sent_pids:
+                self._sent_pids.append(pid)
+        await self.save_dedup()

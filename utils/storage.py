@@ -1,9 +1,8 @@
-import os
 import httpx
 import asyncio
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, ClassVar
 
 from astrbot.api import logger
 
@@ -11,7 +10,13 @@ from ..apis.base import ImageData
 
 
 class ImageStorage:
-    _global_lock = asyncio.Lock()
+    _global_lock: ClassVar[asyncio.Lock | None] = None
+    
+    @classmethod
+    def _get_lock(cls) -> asyncio.Lock:
+        if cls._global_lock is None:
+            cls._global_lock = asyncio.Lock()
+        return cls._global_lock
     
     def __init__(self, storage_path: Path):
         self.storage_path = storage_path
@@ -22,7 +27,7 @@ class ImageStorage:
         self.storage_path.mkdir(parents=True, exist_ok=True)
 
     async def _get_next_index(self) -> int:
-        async with self._global_lock:
+        async with self._get_lock():
             counter = 1
             if self._counter_file.exists():
                 try:
@@ -39,6 +44,10 @@ class ImageStorage:
     async def save_image(self, image: ImageData) -> Optional[Path]:
         if not image.original_url:
             logger.warning(f"[ImageStorage] 图片无有效URL: PID={image.pid}")
+            return None
+
+        if not image.original_url.startswith(('http://', 'https://')):
+            logger.warning(f"[ImageStorage] 无效URL协议: {image.original_url[:50]}")
             return None
 
         try:
@@ -87,7 +96,7 @@ class ImageStorage:
         if image.description:
             content += f"描述: {image.description}\n"
         
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._write_metadata_sync, txt_path, content)
     
     def _write_metadata_sync(self, txt_path: Path, content: str):

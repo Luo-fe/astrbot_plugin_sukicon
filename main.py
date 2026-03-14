@@ -25,6 +25,10 @@ MANUAL_GENERAL = """📖 涩涩手册
 • 当前状态 / status
   查看当前API和R18模式状态
 
+【通用取图命令】
+• 图 / pic [标签] [数量]
+  使用当前API获取图片（受R18模式影响）
+
 【说明】
 - R18模式开启后，所有图片获取命令默认获取R18图片
 - 使用"色图r18"或"sukir18"可强制获取R18图片
@@ -215,10 +219,19 @@ class SukiconPlugin(Star):
         
         async with self.semaphore:
             try:
-                fetch_num = min(num * 3, 5) if self.config.enable_deduplication else num
-                max_attempts = 3 if self.config.enable_deduplication else 1
+                if self.config.enable_deduplication:
+                    if api_type == 'lolicon':
+                        fetch_num = min(num * 3, 20)
+                    else:
+                        fetch_num = min(num * 3, 5)
+                    max_attempts = 3
+                else:
+                    fetch_num = num
+                    max_attempts = 1
+                
                 images = []
                 total_fetched = 0
+                new_pids_to_mark = []
                 
                 for attempt in range(max_attempts):
                     if api_type == 'lolicon':
@@ -244,8 +257,7 @@ class SukiconPlugin(Star):
                     if self.config.enable_deduplication:
                         new_images = [img for img in batch if not self.config.is_pid_sent(img.pid)]
                         images.extend(new_images)
-                        for img in new_images:
-                            self.config.mark_pid_sent(img.pid)
+                        new_pids_to_mark.extend([img.pid for img in new_images])
                         if len(images) >= num:
                             images = images[:num]
                             break
@@ -273,6 +285,9 @@ class SukiconPlugin(Star):
                         else:
                             yield event.plain_result("没有找到符合条件的图片")
                     return
+                
+                for pid in new_pids_to_mark[:len(images)]:
+                    await self.config.mark_pid_sent(pid)
                 
                 await self._save_images(images, api_type)
                 
@@ -369,6 +384,51 @@ R18模式: {r18_state}
     @filter.command("suki手册", alias={"sukihelp"})
     async def show_suki_manual(self, event: AstrMessageEvent):
         yield event.plain_result(MANUAL_SUKI)
+
+    @filter.command("图", alias={"pic", "图片"})
+    async def get_image(self, event: AstrMessageEvent, args: Optional[str] = None):
+        full_msg = event.get_message_str()
+        cmd_match = None
+        for cmd in ["图", "pic", "图片"]:
+            if full_msg.lower().startswith(cmd):
+                cmd_match = cmd
+                break
+        if cmd_match:
+            args = full_msg[len(cmd_match):].strip()
+        else:
+            args = args or ""
+        
+        if self.config.current_api == 'lolicon':
+            parsed = parse_setu_args(args, self.config.r18_mode_enabled)
+            r18 = parsed.r18_override if parsed.r18_override is not None else (1 if self.config.r18_mode_enabled else 0)
+            async for result in self._fetch_and_respond(
+                event, "lolicon", r18, parsed.num, parsed.tags
+            ):
+                yield result
+        else:
+            parsed = parse_suki_args(args, self.config.r18_mode_enabled)
+            level = parsed.level or self.config.suki.default_level
+            has_r18_level = False
+            if level:
+                if '-' in level:
+                    level_nums = [int(x) for x in level.split('-')]
+                    has_r18_level = any(n >= 5 for n in level_nums)
+                else:
+                    has_r18_level = int(level) >= 5
+            
+            if parsed.r18_override is not None:
+                r18 = parsed.r18_override
+            elif has_r18_level:
+                r18 = 1
+            elif self.config.r18_mode_enabled:
+                r18 = 2
+            else:
+                r18 = 0
+            
+            async for result in self._fetch_and_respond(
+                event, "suki", r18, parsed.num, parsed.tags, level, parsed.taste
+            ):
+                yield result
 
     @filter.command("色图", alias={"setu", "涩图"})
     async def get_setu(self, event: AstrMessageEvent, args: Optional[str] = None):
