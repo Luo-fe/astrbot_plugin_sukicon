@@ -19,18 +19,6 @@ class SukiArgs:
     has_r18_level: bool = False
 
 
-    def __post_init__(self):
-        self._seen_pids: set[int] = set()
-
-
-    
-    def is_pid_sent(self, pid: int) -> bool:
-        return pid in self._seen_pids
-    
-    def mark_pid_sent(self, pid: int):
-        self._seen_pids.add(pid)
-
-
 def parse_setu_args(args_str: str, r18_mode: bool) -> SetuArgs:
     tags = []
     num = 1
@@ -55,7 +43,6 @@ def parse_suki_args(args_str: str) -> SukiArgs:
     level = None
     taste = None
     has_r18_level = False
-    seen_in_batch = set()
     
     if not args_str or not args_str.strip():
         return SukiArgs(tags=tags, num=num, level=level, taste=taste, has_r18_level=False)
@@ -73,7 +60,7 @@ def parse_suki_args(args_str: str) -> SukiArgs:
                     start, end = level_val.split('-')
                     if start.isdigit() and end.isdigit() and int(start) <= int(end):
                         start_num, end_num = int(start), int(end)
-                        if start_num <= 6 and end_num <= 6 and start_num >= 0 and end_num >= 0:0:
+                        if start_num <= 6 and end_num <= 6 and start_num >= 0 and end_num >= 0:
                             level = level_val
                             has_r18_level = any(n >= 5 for n in [start_num, end_num])
                 else:

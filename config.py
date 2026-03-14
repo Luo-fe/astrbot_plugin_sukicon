@@ -11,7 +11,6 @@ import random
 from astrbot.api import logger
 from astrbot.core.config.astrbot_config import AstrBotConfig
 from astrbot.api.star import StarTools
-from astrbot.core.utils.astrbot_path import get_astrbot_plugin_path
 
 
 class ConfigNode:
@@ -112,7 +111,6 @@ class FunnyRepliesConfig(ConfigNode):
     cooldown: list[str]
     r18_on: list[str]
     r18_off: list[str]
-    api_switch: list[str]
 
     def get_random(self, key: str) -> str:
         replies = getattr(self, key, [])
@@ -122,7 +120,6 @@ class FunnyRepliesConfig(ConfigNode):
 
 
 class PluginConfig(ConfigNode):
-    default_api: str
     r18_mode: bool
     cooldown_seconds: int
     max_concurrent_requests: int
@@ -166,20 +163,22 @@ class PluginConfig(ConfigNode):
             try:
                 with open(self.state_file, 'r', encoding='utf-8') as f:
                     state = json.load(f)
-                    self._current_api = state.get('current_api', self.default_api)
-                    self._r18_mode = state.get('r18_mode', self.r18_mode)
+                    r18_mode = state.get('r18_mode', self.r18_mode)
+                    
+                    if not isinstance(r18_mode, bool):
+                        logger.warning(f"无效的 R18 模式值: {r18_mode}，重置为 {self.r18_mode}")
+                        r18_mode = self.r18_mode
+                    
+                    self._r18_mode = r18_mode
             except Exception as e:
                 logger.warning(f"加载状态文件失败: {e}")
-                self._current_api = self.default_api
                 self._r18_mode = self.r18_mode
         else:
-            self._current_api = self.default_api
             self._r18_mode = self.r18_mode
 
     def save_state(self):
         import json
         state = {
-            'current_api': self._current_api,
             'r18_mode': self._r18_mode
         }
         try:
@@ -189,17 +188,6 @@ class PluginConfig(ConfigNode):
             logger.error(f"保存状态文件失败: {e}")
 
     @property
-    def current_api(self) -> str:
-        return self._current_api
-
-    @current_api.setter
-    def current_api(self, value: str):
-        if value not in ('lolicon', 'suki'):
-            raise ValueError(f"无效的 API 类型: {value}")
-        self._current_api = value
-        self.save_state()
-
-    @property
     def r18_mode_enabled(self) -> bool:
         return self._r18_mode
 
@@ -207,11 +195,6 @@ class PluginConfig(ConfigNode):
     def r18_mode_enabled(self, value: bool):
         self._r18_mode = value
         self.save_state()
-
-    def toggle_api(self) -> str:
-        new_api = 'suki' if self._current_api == 'lolicon' else 'lolicon'
-        self.current_api = new_api
-        return new_api
 
     def toggle_r18(self) -> bool:
         self.r18_mode_enabled = not self._r18_mode
@@ -237,7 +220,6 @@ class PluginConfig(ConfigNode):
         import json
         self._dedup_lock = asyncio.Lock()
         self._sent_pids: deque[int] = deque(maxlen=self.dedup_history_size)
-        self._pending_save = False
         if self.dedup_file.exists():
             try:
                 with open(self.dedup_file, 'r', encoding='utf-8') as f:
@@ -247,16 +229,6 @@ class PluginConfig(ConfigNode):
             except Exception as e:
                 logger.warning(f"加载去重文件失败: {e}")
                 self._sent_pids = deque(maxlen=self.dedup_history_size)
-
-    async def _save_dedup_async(self):
-        import json
-        async with self._dedup_lock:
-            pids_list = list(self._sent_pids)
-            try:
-                with open(self.dedup_file, 'w', encoding='utf-8') as f:
-                    json.dump({'sent_pids': pids_list}, f, ensure_ascii=False)
-            except Exception as e:
-                logger.error(f"保存去重文件失败: {e}")
 
     def is_pid_sent(self, pid: int) -> bool:
         if not self.enable_deduplication:
@@ -270,4 +242,13 @@ class PluginConfig(ConfigNode):
             for pid in pids:
                 if pid not in self._sent_pids:
                     self._sent_pids.append(pid)
-        await self._save_dedup_async()
+            await self._save_dedup_async()
+
+    async def _save_dedup_async(self):
+        import json
+        pids_list = list(self._sent_pids)
+        try:
+            with open(self.dedup_file, 'w', encoding='utf-8') as f:
+                json.dump({'sent_pids': pids_list}, f, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"保存去重文件失败: {e}")

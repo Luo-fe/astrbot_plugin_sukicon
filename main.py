@@ -16,18 +16,31 @@ from .utils import APILogger, ImageStorage, parse_setu_args, parse_suki_args, fo
 MANUAL_GENERAL = """📖 涩涩手册
 
 【基础指令】
-• 切换loli / 切换api / switch
-  切换当前使用的API (Lolicon ↔ Suki)
-
 • 切换r18 / r18开关
   切换R18模式 (开/关)
   
 • 当前状态 / status
-  查看当前API和R18模式状态
+  查看当前R18模式状态
 
-【通用取图命令】
-• 图 / pic [标签] [数量]
-  使用当前API获取图片（受R18模式影响）
+【Lolicon API 命令】
+• 色图 / setu / 涩图 [标签] [数量]
+  使用Lolicon API获取图片（受R18模式影响）
+
+• 色图r18 / setur18 [标签] [数量]
+  强制获取R18图片
+
+• 色图全年龄 / setusafe [标签] [数量]
+  强制获取非R18图片
+
+【Suki API 命令】
+• suki [标签] [level 等级] [taste 类型] [数量]
+  使用Suki API获取图片（受R18模式影响）
+
+• sukir18 [标签] [level 等级] [数量]
+  强制获取R18图片
+
+• suki全年龄 / sukisafe [标签] [level 等级] [taste 类型] [数量]
+  强制获取非R18图片
 
 【说明】
 - R18模式开启后，所有图片获取命令默认获取R18图片
@@ -121,7 +134,7 @@ MANUAL_SUKI = """📖 Suki API 手册
     "astrbot_plugin_sukicon", 
     "Luo-fe", 
     "一个功能完整的 AstrBot 插件，集成 Lolicon API 和 Suki Loli API，实现图像资源获取功能。", 
-    "1.0.0"
+    "1.1.0"
 )
 class SukiconPlugin(Star):
     _plugin_name = "astrbot_plugin_sukicon"
@@ -162,10 +175,13 @@ class SukiconPlugin(Star):
     async def initialize(self):
         self.semaphore = asyncio.Semaphore(self.config.max_concurrent_requests)
         logger.info(f"[Sukicon] 插件初始化完成")
-        logger.info(f"[Sukicon] 当前API: {self.config.current_api}")
         logger.info(f"[Sukicon] R18模式: {'开启' if self.config.r18_mode_enabled else '关闭'}")
 
     async def terminate(self):
+        if self.lolicon_storage:
+            await self.lolicon_storage.close()
+        if self.suki_storage:
+            await self.suki_storage.close()
         logger.info("[Sukicon] 插件已卸载")
 
     async def _check_and_update_cooldown(self, user_id: str) -> Optional[float]:
@@ -267,7 +283,7 @@ class SukiconPlugin(Star):
                         break
                 
                 if self.api_logger:
-                    self.api_logger.log_api_call(
+                    await self.api_logger.log_api_call(
                         api_type,
                         {'r18': r18, 'num': num, 'tags': tags, 'level': level, 'taste': taste},
                         {'data': [img.to_dict() for img in images]},
@@ -335,20 +351,6 @@ class SukiconPlugin(Star):
                 else:
                     yield event.plain_result(f"获取图片失败：{str(e)}")
 
-    @filter.command("切换loli", alias={"切换api", "switch"})
-    async def switch_api(self, event: AstrMessageEvent):
-        if not self._is_admin(event):
-            yield event.plain_result("⚠️ 此命令仅限管理员使用")
-            return
-        
-        new_api = self.config.toggle_api()
-        api_name = "Lolicon" if new_api == "lolicon" else "Suki"
-        reply = self.config.get_funny_reply('api_switch')
-        if reply:
-            yield event.plain_result(reply.format(api=api_name))
-        else:
-            yield event.plain_result(f"已切换到 {api_name} API")
-
     @filter.command("切换r18", alias={"r18开关"})
     async def switch_r18(self, event: AstrMessageEvent):
         if not self._is_admin(event):
@@ -378,19 +380,18 @@ class SukiconPlugin(Star):
                 return True
             
             return False
-        except Exception:
-            return True
+        except Exception as e:
+            logger.warning(f"[Sukicon] 权限检查异常: {e}")
+            return False
 
     @filter.command("当前状态", alias={"status"})
     async def show_status(self, event: AstrMessageEvent):
-        api_name = "Lolicon" if self.config.current_api == "lolicon" else "Suki"
         r18_state = "开启" if self.config.r18_mode_enabled else "关闭"
-        storage_path = self.config.get_storage_path(self.config.current_api)
         
         status = f"""当前状态：
-API: {api_name}
 R18模式: {r18_state}
-存储路径: {storage_path}"""
+Lolicon存储路径: {self.config.get_storage_path('lolicon')}
+Suki存储路径: {self.config.get_storage_path('suki')}"""
         yield event.plain_result(status)
 
     @filter.command("涩涩手册", alias={"sssc"})
@@ -404,42 +405,6 @@ R18模式: {r18_state}
     @filter.command("suki手册", alias={"sukihelp"})
     async def show_suki_manual(self, event: AstrMessageEvent):
         yield event.plain_result(MANUAL_SUKI)
-
-    @filter.command("图", alias={"pic", "图片"})
-    async def get_image(self, event: AstrMessageEvent, args: Optional[str] = None):
-        full_msg = event.get_message_str()
-        cmd_match = None
-        for cmd in ["图", "pic", "图片"]:
-            if full_msg.lower().startswith(cmd):
-                cmd_match = cmd
-                break
-        if cmd_match:
-            args = full_msg[len(cmd_match):].strip()
-        else:
-            args = args or ""
-        
-        if self.config.current_api == 'lolicon':
-            parsed = parse_setu_args(args, self.config.r18_mode_enabled)
-            r18 = parsed.r18_override if parsed.r18_override is not None else (1 if self.config.r18_mode_enabled else 0)
-            async for result in self._fetch_and_respond(
-                event, "lolicon", r18, parsed.num, parsed.tags
-            ):
-                yield result
-        else:
-            parsed = parse_suki_args(args)
-            level = parsed.level or self.config.suki.default_level
-            
-            if parsed.has_r18_level:
-                r18 = 1
-            elif self.config.r18_mode_enabled:
-                r18 = 2
-            else:
-                r18 = 0
-            
-            async for result in self._fetch_and_respond(
-                event, "suki", r18, parsed.num, parsed.tags, level, parsed.taste
-            ):
-                yield result
 
     @filter.command("色图", alias={"setu", "涩图"})
     async def get_setu(self, event: AstrMessageEvent, args: Optional[str] = None):

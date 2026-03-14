@@ -1,10 +1,4 @@
 {
-  "default_api": {
-    "description": "默认使用的API",
-    "type": "string",
-    "default": "lolicon",
-    "hint": "可选值: lolicon 或 suki"
-  },
   "r18_mode": {
     "description": "R18模式",
     "type": "bool",
@@ -217,16 +211,6 @@
           "清心寡欲模式启动"
         ],
         "hint": "关闭R18模式时的随机回复"
-      },
-      "api_switch": {
-        "description": "API切换回复",
-        "type": "list",
-        "default": [
-          "切换成功！现在使用 {api} API",
-          "已切换到 {api}~",
-          "现在由 {api} 为您服务"
-        ],
-        "hint": "切换API时的随机回复，{api}会被替换为API名称"
       }
     }
   }
